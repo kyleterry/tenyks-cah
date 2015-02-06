@@ -45,7 +45,7 @@ HELP_TEXT = '''Tenyks Cards Against Humanity
             "tenyks: cancel cah game"
 '''
 
-GAME_DURATION = 10 # in hours
+GAME_DURATION = 36000 # in seconds
 
 CARD_TYPE_QUESTION = 'question'
 CARD_TYPE_ANSWER = 'answer'
@@ -107,7 +107,7 @@ class CardsAgainstHumanityService(TenyksService):
         if channel in self.games and not self.games[channel].is_expired():
             self.send('{}: You already have a game started. Use `tenyks: cah status` to get more info.'.format(nick), data)
             return
-        self.games[channel] = CardsAgainstHumanity()
+        self.games[channel] = CardsAgainstHumanity(channel)
         self.games[channel].new_player(nick, host=True)
         self.send('{} has started a new game of cards against humanity. Please let me know if you want to play by saying "I\'m in for cah".'.format(nick), data)
         self.send('Games are good for 10 hours. After that, asking me to start a new game will succeed if an old one isn\'t complete', data)
@@ -142,7 +142,7 @@ class CardsAgainstHumanityService(TenyksService):
         if game.current_phase > GAME_PHASE_NEW:
             self.send('{}: The game has already started.'.format(nick), data)
 
-        if game.player_count < MIN_PLAYERS:
+        if game.player_count() < MIN_PLAYERS:
             self.send('{}, the minimum amount of players is {} and you currently have {} so I cannot start the game.'.format(nick, MIN_PLAYERS, game.player_count()), data)
             return
 
@@ -203,15 +203,50 @@ class CardsAgainstHumanityService(TenyksService):
             self.send('No one has created a new game yet!', data)
             return
 
-        number = int(match['cardnum'])
+        if game.current_phase == GAME_PHASE_QUESTION:
+            data['target'] = nick
+            if game.current_question_player().name != nick:
+                self.send('Hold your horses. A question card needs to be played first.', data)
+                return
+            elif game.current_question_player().name == nick:
+                self.send('Nice try.', data)
+                return
+
+        number = int(match.groupdict()['cardnum'])
 
 
         player = game.get_player(nick)
-        if number > len(player.hand) or number == 0:
+        if number > len(player.hand):
             self.send('You can\'t play {} as it doesn\'t exist.'.format(number))
             return
 
-        game.play_answer_card(player.hand[number - 1])
+        game.play_answer_card(player, number)
+
+        if len(game.round_answer_cards) == (len(game.players) - 1):
+            game.current_phase = GAME_PHASE_SELECTION
+            data['target'] = game.channel
+            self.send('Okay, everyone is in with their answers.', data)
+            self.send('{}: you can say "read cards" now to have me list them.'.format(game.current_question_player().name), data)
+
+    def handle_read_cards(self, data, match):
+        channel = data['from_channel']
+        nick = data['nick']
+        if channel not in self.games:
+            self.send('No one has created a new game yet!', data)
+            return
+
+        game = self.games[channel]
+
+        if game.current_phase != GAME_PHASE_SELECTION:
+            self.send('{}: Not everyone is all in yet. Maybe nudge them?'.format(nick), data)
+            return
+
+        if nick != game.current_question_player().name:
+            return
+
+        random.shuffle(game.round_answer_cards)
+        for i, card in enumerate(game.round_answer_cards):
+            self.send('{} - {}'.format(i, card.text), data)
 
     def handle_choose_card(self, data, match):
         channel = data['from_channel']
@@ -223,23 +258,28 @@ class CardsAgainstHumanityService(TenyksService):
         game = self.games[channel]
 
         if game.current_phase != GAME_PHASE_SELECTION:
-            self.send('{}: You can\'t choose a card if I haven\'t even read then yet...'.format(nick))
+            self.send('{}: You can\'t choose a card if I haven\'t even read them yet...'.format(nick), data)
             return
 
-        number = int(match['cardnum'])
-
-        if number > len(game.round_answer_cards) or number == 0:
-            self.send('{}: what the fuck, dude...'.format(nick))
+        if nick != game.current_question_player().name:
             return
 
-        card = game.round_answer_cards[number - 1]
+        number = int(match.groupdict()['cardnum'])
+
+        if number > len(game.round_answer_cards):
+            self.send('{}: what the fuck, dude...'.format(nick), data)
+            return
+
+        card = game.round_answer_cards[number]
         player = game.choose_card_as_winner(card)
 
-        self.send('{}: you won the round! HOLY SHIT YOU WON THE ROUND!'.format(player.name))
+        self.send('{}: you won the round! HOLY SHIT YOU WON THE ROUND!'.format(player.name), data)
 
         game.replenish()
         game.current_phase = GAME_PHASE_QUESTION
 
+        player = game.set_and_return_next_player()
+        self.send('{}, you\'re up. Say "play card" in the channel to throw down your question card'.format(player.name), data)
 
     def _pm_hands(self, data, game):
         qp = game.players[game.player_index]
@@ -250,7 +290,7 @@ class CardsAgainstHumanityService(TenyksService):
                 self.send('Here\'s your hand:', player_data)
                 self.send(' ', player_data)
 
-                for i, card in enumerate(player.answer_cards):
+                for i, card in enumerate(player.hand):
                     self.send('{} - {}'.format(i, card.text), player_data)
 
                 self.send(' ', player_data)
@@ -259,7 +299,8 @@ class CardsAgainstHumanityService(TenyksService):
 
 class CardsAgainstHumanity(object):
 
-    def __init__(self):
+    def __init__(self, channel):
+        self.channel = channel
         self.created = datetime.datetime.now()
         self.current_phase = GAME_PHASE_NEW
         self.players = []
@@ -272,8 +313,8 @@ class CardsAgainstHumanity(object):
             [self.all_answer_cards.append(Card(CARD_TYPE_ANSWER, line)) for line in f]
         random.shuffle(self.all_answer_cards)
         with open('./questions.txt', 'r') as f:
-            [self.question_cards.append(Card(CARD_TYPE_QUESTION, line)) for line in f]
-        random.shuffle(self.question_cards)
+            [self.all_question_cards.append(Card(CARD_TYPE_QUESTION, line)) for line in f]
+        random.shuffle(self.all_question_cards)
 
     def initial_deal(self):
         if self.current_phase > GAME_PHASE_NEW:
@@ -290,7 +331,7 @@ class CardsAgainstHumanity(object):
                 j = 0
                 player = self.players[j]
 
-            player.answer_cards[card]
+            player.hand.append(card)
             j += 1
 
     def replenish(self):
@@ -336,7 +377,7 @@ class CardsAgainstHumanity(object):
 
     def play_question_card(self):
         player = self.current_question_player()
-        card = self.question_cards.pop()
+        card = self.all_question_cards.pop()
         player.current_question_card = card
         player.question_cards.append(card)
 
@@ -348,7 +389,7 @@ class CardsAgainstHumanity(object):
         return card
 
     def play_answer_card(self, player, index):
-        card = player.hand.pop(index - 1)
+        card = player.hand.pop(index)
         player.answer_cards.append(card)
         self.round_answer_cards.append(card)
         card.round = self.round_number
@@ -356,9 +397,16 @@ class CardsAgainstHumanity(object):
     def choose_card_as_winner(self, card):
         card.winner = True
         for player in self.players:
-            for _card in player.hand:
-                if card == _card:
+            for _card in player.answer_cards:
+                if card.text == _card.text:
                     return player
+
+    def is_expired(self):
+        now = datetime.datetime.now()
+        td = now - self.created
+        if td.seconds > GAME_DURATION:
+            return True
+        return False
 
 
 class Card(object):
@@ -380,9 +428,10 @@ class Player(object):
     def __init__(self, name):
         self.name = name
         self.answer_cards = []
-        self.quesion_cards = []
+        self.question_cards = []
         self.current_question_card = None
         self.host = True
+        self.hand = []
 
 
 def main():
