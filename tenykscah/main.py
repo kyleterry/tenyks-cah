@@ -1,4 +1,6 @@
+import copy
 import datetime
+import gevent
 import random
 
 from tenyksservice import TenyksService, run_service, FilterChain
@@ -102,7 +104,7 @@ class CardsAgainstHumanityService(TenyksService):
         super(CardsAgainstHumanityService, self).__init__(*args, **kwargs)
 
     def handle_new_game(self, data, match):
-        channel = data['from_channel']
+        channel = data['target']
         nick = data['nick']
         if channel in self.games and not self.games[channel].is_expired():
             self.send('{}: You already have a game started. Use `tenyks: cah status` to get more info.'.format(nick), data)
@@ -115,7 +117,7 @@ class CardsAgainstHumanityService(TenyksService):
         self.send('Only the game host can cancel games. One can do that by asking me: "tenyks: cancel cah game".', data)
 
     def handle_join_game(self, data, match):
-        channel = data['from_channel']
+        channel = data['target']
         nick = data['nick']
         if channel not in self.games:
             self.send('No one has created a new game yet!', data)
@@ -131,7 +133,7 @@ class CardsAgainstHumanityService(TenyksService):
         self.send('{}: You have joined the game. It should start shortly. I will send you a PM with your hand of cards.'.format(nick), data)
 
     def handle_start_game(self, data, match):
-        channel = data['from_channel']
+        channel = data['target']
         nick = data['nick']
         if channel not in self.games:
             self.send('No one has created a new game yet!', data)
@@ -154,7 +156,7 @@ class CardsAgainstHumanityService(TenyksService):
         self.send('{}, you\'re up. Say "play card" in the channel to throw down your question card'.format(player.name), data)
 
     def handle_cancel_game(self, data, match):
-        channel = data['from_channel']
+        channel = data['target']
         nick = data['nick']
         if channel not in self.games:
             self.send('No one has created a new game yet!', data)
@@ -169,7 +171,7 @@ class CardsAgainstHumanityService(TenyksService):
                 self.send('The game was canceled :(', data)
 
     def handle_play_question_card(self, data, match):
-        channel = data['from_channel']
+        channel = data['target']
         nick = data['nick']
         if channel not in self.games:
             self.send('No one has created a new game yet!', data)
@@ -229,7 +231,7 @@ class CardsAgainstHumanityService(TenyksService):
             self.send('{}: you can say "read cards" now to have me list them.'.format(game.current_question_player().name), data)
 
     def handle_read_cards(self, data, match):
-        channel = data['from_channel']
+        channel = data['target']
         nick = data['nick']
         if channel not in self.games:
             self.send('No one has created a new game yet!', data)
@@ -249,7 +251,7 @@ class CardsAgainstHumanityService(TenyksService):
             self.send('{} - {}'.format(i, card.text), data)
 
     def handle_choose_card(self, data, match):
-        channel = data['from_channel']
+        channel = data['target']
         nick = data['nick']
         if channel not in self.games:
             self.send('No one has created a new game yet!', data)
@@ -282,19 +284,23 @@ class CardsAgainstHumanityService(TenyksService):
         self.send('{}, you\'re up. Say "play card" in the channel to throw down your question card'.format(player.name), data)
 
     def _pm_hands(self, data, game):
-        qp = game.players[game.player_index]
         for player in game.players:
-            if player.name != qp.name:
-                player_data = data
-                player_data['target'] = player.name
-                self.send('Here\'s your hand:', player_data)
-                self.send(' ', player_data)
+            gevent.spawn(self._pm_hand_to_player, player, copy.copy(data), game)
 
-                for i, card in enumerate(player.hand):
-                    self.send('{} - {}'.format(i, card.text), player_data)
+    def _pm_hand_to_player(self, player, data, game):
+        qp = game.players[game.player_index]
+        if player.name != qp.name:
+            player_data = data
+            player_data['target'] = player.name
+            self.send('Here\'s your hand:', player_data)
+            self.send(' ', player_data)
 
-                self.send(' ', player_data)
-                self.send('Please choose a card and let me know what number you\'d like to play.', player_data)
+            for i, card in enumerate(player.hand):
+                self.send('{} - {}'.format(i, card.text), player_data)
+
+            self.send(' ', player_data)
+            self.send('Please choose a card and let me know what number you\'d like to play.', player_data)
+
 
 
 class CardsAgainstHumanity(object):
