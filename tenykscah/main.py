@@ -337,7 +337,8 @@ class CardsAgainstHumanity(object):
     def replenish(self):
         if self.current_phase == GAME_PHASE_SELECTION:
             for player in self.players:
-                player.hand.append(self.all_answer_cards.pop())
+                if player.name != self.current_question_player().name:
+                    player.hand.append(self.all_answer_cards.pop())
 
     def new_player(self, name, host=False):
         if self.player_exists(name):
