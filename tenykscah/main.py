@@ -49,6 +49,7 @@ HELP_TEXT = '''Tenyks Cards Against Humanity
 MAX_GAME_DURATION = 36000 # in seconds
 POINTS_TO_WIN = 10
 MIN_PLAYERS = 3
+HAND_SIZE = 10
 
 CARD_TYPE_QUESTION = 'question'
 CARD_TYPE_ANSWER = 'answer'
@@ -361,7 +362,7 @@ class CardsAgainstHumanity(object):
         if self.current_phase > GAME_PHASE_NEW:
             return
 
-        iterations = len(self.players) * 5
+        iterations = len(self.players) * HAND_SIZE
 
         j = 0
         for i in range(iterations):
