@@ -117,7 +117,7 @@ class CardsAgainstHumanityService(TenyksService):
         self.games[channel] = CardsAgainstHumanity(channel)
         self.games[channel].new_player(nick, host=True)
         self.send('{} has started a new game of cards against humanity. Please let me know if you want to play by saying "!cah join".'.format(nick), data)
-        self.send('Games are good for 10 hours. After that, asking me to start a new game will succeed if an old one isn\'t complete', data)
+        self.send('Games are good for {} seconds by default. After that, asking me to start a new game will succeed if an old one isn\'t complete'.format(MAX_GAME_DURATION), data)
         self.send('The game host is the one who created the new game.', data)
         self.send('Only the game host can cancel games. One can do that by asking me: "tenyks: cancel cah game".', data)
 
@@ -308,7 +308,7 @@ class CardsAgainstHumanityService(TenyksService):
         player = game.check_points_maybe_return_winner()
 
         if player:
-            self.send('{}: has collected 10 points in a sweeping win for a bullshit title! HOLY SHIT YOU WON THE GAME!'.format(player.name), data)
+            self.send('{}: has collected {} points in a sweeping win for a bullshit title! HOLY SHIT YOU WON THE GAME!'.format(player.name, POINTS_TO_WIN), data)
             self.send('This game is over, people.', data)
             # show other player points here
             del self.games[channel]
@@ -388,7 +388,7 @@ class CardsAgainstHumanity(object):
             return
 
         player = Player(name)
-        player.host = True
+        player.host = False
         self.players.append(player)
 
     def player_exists(self, name):
