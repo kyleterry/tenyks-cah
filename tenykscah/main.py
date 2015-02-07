@@ -95,6 +95,10 @@ class CardsAgainstHumanityService(TenyksService):
         'choose_card': FilterChain(
             [r'^!cah (?P<cardnum>[0-9]*) wins$'],
             direct_only=False),
+
+        'set_config': FilterChain(
+            [r'!cah set (?P<key>(.*)) (?P<value>(.*))$'],
+            direct_only=False)
     }
 
     help_text = HELP_TEXT
@@ -116,6 +120,27 @@ class CardsAgainstHumanityService(TenyksService):
         self.send('Games are good for 10 hours. After that, asking me to start a new game will succeed if an old one isn\'t complete', data)
         self.send('The game host is the one who created the new game.', data)
         self.send('Only the game host can cancel games. One can do that by asking me: "tenyks: cancel cah game".', data)
+
+    def handle_set_config(self, data, match):
+        config_key = match.groupdict()['key']
+        config_value = match.groupdict()['value']
+        channel = data['target']
+        nick = data['nick']
+        global POINTS_TO_WIN, MAX_GAME_DURATION
+        if channel not in self.games:
+            self.send('No one has created a new game yet!', data)
+            return
+
+        if config_key == 'max_points':
+            POINTS_TO_WIN = int(config_value)
+            self.send('{}: set max_points to {}'.format(nick, config_value), data)
+        elif config_key == 'max_duration':
+            MAX_GAME_DURATION = int(config_value)
+            self.send('{}: set max_duration to {}'.format(nick, config_value), data)
+        else:
+            self.send('{}: supported keys are "max_points" and "max_duration"'.format(nick), data)
+            return
+
 
     def handle_join_game(self, data, match):
         channel = data['target']
@@ -225,6 +250,7 @@ class CardsAgainstHumanityService(TenyksService):
             return
 
         game.play_answer_card(player, number)
+        self.send('Okay.', data)
 
         if len(game.round_answer_cards) == (len(game.players) - 1):
             game.current_phase = GAME_PHASE_SELECTION
@@ -283,7 +309,7 @@ class CardsAgainstHumanityService(TenyksService):
 
         if player:
             self.send('{}: has collected 10 points in a sweeping win for a bullshit title! HOLY SHIT YOU WON THE GAME!'.format(player.name), data)
-            self.send('This game is every, people.', data)
+            self.send('This game is over, people.', data)
             # show other player points here
             del self.games[channel]
             return
@@ -424,7 +450,7 @@ class CardsAgainstHumanity(object):
             for card in player.answer_cards:
                 if card.winner:
                     i += 1
-                if i == 10:
+                if i == POINTS_TO_WIN:
                     return player
         return None
 
