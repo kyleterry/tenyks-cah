@@ -47,7 +47,8 @@ HELP_TEXT = '''Tenyks Cards Against Humanity
             "tenyks: cancel cah game"
 '''
 
-GAME_DURATION = 36000 # in seconds
+MAX_GAME_DURATION = 36000 # in seconds
+POINTS_TO_WIN = 10
 
 CARD_TYPE_QUESTION = 'question'
 CARD_TYPE_ANSWER = 'answer'
@@ -64,36 +65,36 @@ MIN_PLAYERS = 3
 class CardsAgainstHumanityService(TenyksService):
     irc_message_filters = {
         'new_game': FilterChain(
-            [r'^new game of cah$', r'^new cah$'],
-            direct_only=True),
+            [r'^!cah new$'],
+            direct_only=False),
 
         'start_game': FilterChain(
-            [r'^start cah game$'],
-            direct_only=True),
+            [r'^!cah start$'],
+            direct_only=False),
 
         'cancel_game': FilterChain(
-            [r'^cancel cah game$'],
-            direct_only=True),
+            [r'^!cah cancel$'],
+            direct_only=False),
 
         'join_game': FilterChain(
-            [r'^I\'m in for cah', r'^I\'ll play$'],
+            [r'^!cah join$'],
             direct_only=False),
 
         'play_question_card': FilterChain(
-            [r'^play card$'],
-            direct_only=True),
+            [r'^!cah play card$'],
+            direct_only=False),
 
         'play_answer_card': FilterChain(
-            [r'^play (?P<cardnum>[0-9]*)$'],
+            [r'^!cah play (?P<cardnum>[0-9]*)$'],
             private_only=True),
 
         'read_cards': FilterChain(
-            [r'^read cards$'],
-            direct_only=True),
+            [r'^!cah read cards$'],
+            direct_only=False),
 
         'choose_card': FilterChain(
-            [r'^(?P<cardnum>[0-9]*) wins$'],
-            direct_only=True),
+            [r'^!cah (?P<cardnum>[0-9]*) wins$'],
+            direct_only=False),
     }
 
     help_text = HELP_TEXT
@@ -111,7 +112,7 @@ class CardsAgainstHumanityService(TenyksService):
             return
         self.games[channel] = CardsAgainstHumanity(channel)
         self.games[channel].new_player(nick, host=True)
-        self.send('{} has started a new game of cards against humanity. Please let me know if you want to play by saying "I\'m in for cah".'.format(nick), data)
+        self.send('{} has started a new game of cards against humanity. Please let me know if you want to play by saying "!cah join".'.format(nick), data)
         self.send('Games are good for 10 hours. After that, asking me to start a new game will succeed if an old one isn\'t complete', data)
         self.send('The game host is the one who created the new game.', data)
         self.send('Only the game host can cancel games. One can do that by asking me: "tenyks: cancel cah game".', data)
@@ -143,6 +144,7 @@ class CardsAgainstHumanityService(TenyksService):
 
         if game.current_phase > GAME_PHASE_NEW:
             self.send('{}: The game has already started.'.format(nick), data)
+            return
 
         if game.player_count() < MIN_PLAYERS:
             self.send('{}, the minimum amount of players is {} and you currently have {} so I cannot start the game.'.format(nick, MIN_PLAYERS, game.player_count()), data)
@@ -152,8 +154,8 @@ class CardsAgainstHumanityService(TenyksService):
 
         game.current_phase = GAME_PHASE_QUESTION
 
-        player = game.set_and_return_next_player(init=True)
-        self.send('{}, you\'re up. Say "play card" in the channel to throw down your question card'.format(player.name), data)
+        player = game.set_and_return_next_czar(init=True)
+        self.send('{}, you\'re up as card czar. Say "!cah play card" in the channel to throw down your question card'.format(player.name), data)
 
     def handle_cancel_game(self, data, match):
         channel = data['target']
@@ -180,7 +182,7 @@ class CardsAgainstHumanityService(TenyksService):
         game = self.games[channel]
 
         if game.current_phase == GAME_PHASE_QUESTION:
-            if game.current_question_player().name != nick:
+            if game.czar().name != nick:
                 data['target'] = nick
                 self.send('Hold your horses. A question card needs to be played first.', data)
                 return
@@ -207,10 +209,10 @@ class CardsAgainstHumanityService(TenyksService):
 
         if game.current_phase == GAME_PHASE_QUESTION:
             data['target'] = nick
-            if game.current_question_player().name != nick:
+            if game.czar().name != nick:
                 self.send('Hold your horses. A question card needs to be played first.', data)
                 return
-            elif game.current_question_player().name == nick:
+            elif game.czar().name == nick:
                 self.send('Nice try.', data)
                 return
 
@@ -228,7 +230,7 @@ class CardsAgainstHumanityService(TenyksService):
             game.current_phase = GAME_PHASE_SELECTION
             data['target'] = game.channel
             self.send('Okay, everyone is in with their answers.', data)
-            self.send('{}: you can say "read cards" now to have me list them.'.format(game.current_question_player().name), data)
+            self.send('{}: you can say "!cah read cards" now to have me list them.'.format(game.czar().name), data)
 
     def handle_read_cards(self, data, match):
         channel = data['target']
@@ -243,7 +245,7 @@ class CardsAgainstHumanityService(TenyksService):
             self.send('{}: Not everyone is all in yet. Maybe nudge them?'.format(nick), data)
             return
 
-        if nick != game.current_question_player().name:
+        if nick != game.czar().name:
             return
 
         random.shuffle(game.round_answer_cards)
@@ -263,7 +265,7 @@ class CardsAgainstHumanityService(TenyksService):
             self.send('{}: You can\'t choose a card if I haven\'t even read them yet...'.format(nick), data)
             return
 
-        if nick != game.current_question_player().name:
+        if nick != game.czar().name:
             return
 
         number = int(match.groupdict()['cardnum'])
@@ -275,20 +277,29 @@ class CardsAgainstHumanityService(TenyksService):
         card = game.round_answer_cards[number]
         player = game.choose_card_as_winner(card)
 
-        self.send('{}: you won the round! HOLY SHIT YOU WON THE ROUND!'.format(player.name), data)
+        self.send('{}: you won the round! YOU!'.format(player.name), data)
+
+        player = game.check_points_maybe_return_winner()
+
+        if player:
+            self.send('{}: has collected 10 points in a sweeping win for a bullshit title! HOLY SHIT YOU WON THE GAME!'.format(player.name), data)
+            self.send('This game is every, people.', data)
+            # show other player points here
+            del self.games[channel]
+            return
 
         game.replenish()
         game.current_phase = GAME_PHASE_QUESTION
 
-        player = game.set_and_return_next_player()
-        self.send('{}, you\'re up. Say "play card" in the channel to throw down your question card'.format(player.name), data)
+        player = game.set_and_return_next_czar()
+        self.send('{}, you\'re up as card czar. Say "!cah play card" in the channel to throw down your question card'.format(player.name), data)
 
     def _pm_hands(self, data, game):
         for player in game.players:
             gevent.spawn(self._pm_hand_to_player, player, copy.copy(data), game)
 
     def _pm_hand_to_player(self, player, data, game):
-        qp = game.players[game.player_index]
+        qp = game.players[game.czar_index]
         if player.name != qp.name:
             player_data = data
             player_data['target'] = player.name
@@ -314,7 +325,7 @@ class CardsAgainstHumanity(object):
         self.all_question_cards = []
         self.round_number = 0
         self.round_answer_cards = []
-        self.player_index = 0
+        self.czar_index = 0
         with open('./answers.txt', 'r') as f:
             [self.all_answer_cards.append(Card(CARD_TYPE_ANSWER, line)) for line in f]
         random.shuffle(self.all_answer_cards)
@@ -343,7 +354,7 @@ class CardsAgainstHumanity(object):
     def replenish(self):
         if self.current_phase == GAME_PHASE_SELECTION:
             for player in self.players:
-                if player.name != self.current_question_player().name:
+                if player.name != self.czar().name:
                     player.hand.append(self.all_answer_cards.pop())
 
     def new_player(self, name, host=False):
@@ -363,27 +374,26 @@ class CardsAgainstHumanity(object):
     def player_count(self):
         return len(self.players)
 
-    def set_and_return_next_player(self, init=False):
+    def set_and_return_next_czar(self, init=False):
         if init:
-            self.player_index = 0
+            self.czar_index = 0
         else:
-            self.player_index += 1
-            if self.player_index + 1 > len(self.players):
-                self.player_index = 0
+            self.czar_index += 1
+            if self.czar_index + 1 > len(self.players):
+                self.czar_index = 0
 
-        player = self.players[self.player_index]
-        return player
+        return self.czar()
 
     def get_player(self, name):
         for player in self.players:
             if name == player.name:
                 return player
 
-    def current_question_player(self):
-        return self.players[self.player_index]
+    def czar(self):
+        return self.players[self.czar_index]
 
     def play_question_card(self):
-        player = self.current_question_player()
+        player = self.czar()
         card = self.all_question_cards.pop()
         player.current_question_card = card
         player.question_cards.append(card)
@@ -408,10 +418,19 @@ class CardsAgainstHumanity(object):
                 if card.text == _card.text:
                     return player
 
+    def check_points_maybe_return_winner(self):
+        for player in self.players:
+            i = 0
+            for card in player.answer_cards:
+                if card.winner:
+                    i += 1
+                if i == 10:
+                    return player
+        return None
+
     def is_expired(self):
-        now = datetime.datetime.now()
-        td = now - self.created
-        if td.seconds > GAME_DURATION:
+        delta = datetime.datetime.now() - self.created
+        if delta.seconds > MAX_GAME_DURATION:
             return True
         return False
 
