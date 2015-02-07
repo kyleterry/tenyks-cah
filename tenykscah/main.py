@@ -12,43 +12,43 @@ HELP_TEXT = '''Tenyks Cards Against Humanity
 
     NEW PHASE:
         To create a new game:
-            "tenyks: new game of cah"
-            Shorthand version: "tenyks: new cah"
+            "!cah new"
 
         Once a new game has been created, players will need to optin:
-            "I'm in for cah"
+            "!cah join"
 
         Once enough players have joined, the game host can start the game:
-            "tenyks: start cah game"
+            "!cah start"
 
     PLAY PHASE:
         Tenyks will inform you that you are the next one to throw down a question card.
         You can do this by saying the following:
-            "tenyks: play card"
+            "!cah play card"
 
         Once a question card has been played, tenyks will send private messages to everyone
         who has opted in. This message will include a numbered hand of cards.
         Once you have decided what card you want to play, you send a private message to tenyks:
-            "play 3"
+            "!cah play 3"
 
         When everyone has chosen a card to play, tenyks will inform the channel that everyone is all in.
         The person playing the question card will then tell tenyks to read the cards:
-            "tenyks: read cards"
+            "!cah read cards"
 
         Tenyks will read all the cards people are playing into the channel. They will be indexed.
         The question card player can then choose a number when they pick who won the round:
-            "tenyks: 4 wins"
+            "!cah 4 wins"
 
         Tenyks will then let the channel know who had card number 4. Then the next person in the player
         rotation is up and the game starts back at the beginning of PLAY PHASE.
 
     Canceling the game:
         You can tell tenyks to cancel the current game only if you are the game host:
-            "tenyks: cancel cah game"
+            "!cah cancel"
 '''
 
 MAX_GAME_DURATION = 36000 # in seconds
 POINTS_TO_WIN = 10
+MIN_PLAYERS = 3
 
 CARD_TYPE_QUESTION = 'question'
 CARD_TYPE_ANSWER = 'answer'
@@ -58,8 +58,6 @@ GAME_PHASE_QUESTION = 1
 GAME_PHASE_ANSWERS = 2
 GAME_PHASE_SELECTION = 3
 GAME_PHASE_CONCLUSION = 4
-
-MIN_PLAYERS = 3
 
 
 class CardsAgainstHumanityService(TenyksService):
