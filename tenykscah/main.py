@@ -97,7 +97,11 @@ class CardsAgainstHumanityService(TenyksService):
 
         'set_config': FilterChain(
             [r'!cah set (?P<key>(.*)) (?P<value>(.*))$'],
-            direct_only=False)
+            direct_only=False),
+
+        'kick_player': FilterChain(
+            [r'^!cah kick (?P<_nick>(?<=[^a-z_\-\[\]\\^{}|`])[a-z_\-\[\]\\^{}|`][a-z0-9_\-\[\]\\^{}|`]*)$'],
+            direct_only=False),
     }
 
     help_text = HELP_TEXT
@@ -156,6 +160,31 @@ class CardsAgainstHumanityService(TenyksService):
             return
         game.new_player(nick)
         self.send('{}: You have joined the game. It should start shortly. I will send you a PM with your hand of cards.'.format(nick), data)
+
+    def handle_kick_player(self, data, match):
+        channel = data['target']
+        nick = data['nick']
+        offender = match.groupdict()['_nick']
+        if channel not in self.games:
+            self.send('No one has created a new game yet!', data)
+            return
+
+        game = self.games[channel]
+        player = game.get_player(nick)
+        offenderobj = game.get_player(offender)
+
+        if not player.host:
+            self.send('{}: Only the host can kick a player.'.format(nick), data)
+
+        if not offenderobj:
+            self.send('{}: {} is not a player.'.format(nick, offender), data)
+
+        del game.players[offenderobj.name]
+
+        all_in = game.check_status()
+        if all_in:
+            self.send('Okay, everyone is in with their answers.', data)
+            self.send('{}: you can say "!cah read cards" now to have me list them.'.format(game.czar().name), data)
 
     def handle_start_game(self, data, match):
         channel = data['target']
@@ -251,8 +280,8 @@ class CardsAgainstHumanityService(TenyksService):
         game.play_answer_card(player, number)
         self.send('Okay.', data)
 
-        if len(game.round_answer_cards) == (len(game.players) - 1):
-            game.current_phase = GAME_PHASE_SELECTION
+        all_in = game.check_status()
+        if all_in:
             data['target'] = game.channel
             self.send('Okay, everyone is in with their answers.', data)
             self.send('{}: you can say "!cah read cards" now to have me list them.'.format(game.czar().name), data)
@@ -452,6 +481,12 @@ class CardsAgainstHumanity(object):
                 if i == POINTS_TO_WIN:
                     return player
         return None
+
+    def check_status(self):
+        if len(self.round_answer_cards) == (len(self.players) - 1):
+            self.current_phase = GAME_PHASE_SELECTION
+            return True
+        return False
 
     def is_expired(self):
         delta = datetime.datetime.now() - self.created
