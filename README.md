@@ -1,4 +1,4 @@
 # Tenyks Cards Against Humanity
 
-This is a [Tenyks](https://github.com/kyleterry/tenyks) to play Cards Against
+This is a [Tenyks](https://github.com/kyleterry/tenyks) service to play Cards Against
 Humanity on IRC.
