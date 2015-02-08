@@ -122,7 +122,7 @@ class CardsAgainstHumanityService(TenyksService):
         self.send('{} has started a new game of cards against humanity. Please let me know if you want to play by saying "!cah join".'.format(nick), data)
         self.send('Games are good for {} seconds by default. After that, asking me to start a new game will succeed if an old one isn\'t complete'.format(MAX_GAME_DURATION), data)
         self.send('The game host is the one who created the new game.', data)
-        self.send('Only the game host can cancel games. One can do that by asking me: "tenyks: cancel cah game".', data)
+        self.send('Only the game host can cancel games. One can do that by asking me: "!cah cancel".', data)
 
     def handle_set_config(self, data, match):
         config_key = match.groupdict()['key']
