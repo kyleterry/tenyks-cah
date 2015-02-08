@@ -175,9 +175,11 @@ class CardsAgainstHumanityService(TenyksService):
 
         if not player.host:
             self.send('{}: Only the host can kick a player.'.format(nick), data)
+            return
 
         if not offenderobj:
             self.send('{}: {} is not a player.'.format(nick, offender), data)
+            return
 
         if game.player_count() - 1 < MIN_PLAYERS:
             self.send('{}: kicking {} will result in a game where the players are less than the minimum. You should just cancel.'.format(nick, offender), data)
