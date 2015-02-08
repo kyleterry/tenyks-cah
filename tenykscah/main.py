@@ -185,10 +185,11 @@ class CardsAgainstHumanityService(TenyksService):
 
         del game.players[offenderobj.name]
 
-        all_in = game.check_status()
-        if all_in:
-            self.send('Okay, everyone is in with their answers.', data)
-            self.send('{}: you can say "!cah read cards" now to have me list them.'.format(game.czar().name), data)
+        if game.current_phase == GAME_PHASE_ANSWERS:
+            all_in = game.check_status()
+            if all_in:
+                self.send('Okay, everyone is in with their answers.', data)
+                self.send('{}: you can say "!cah read cards" now to have me list them.'.format(game.czar().name), data)
 
     def handle_start_game(self, data, match):
         channel = data['target']
